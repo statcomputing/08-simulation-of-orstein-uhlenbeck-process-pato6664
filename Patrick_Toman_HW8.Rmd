@@ -6,6 +6,16 @@ date: "`r format(Sys.time(), '%d %B %Y')`"
 output: html_document
 ---
 
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,message = F)
+```
+
+```{r,echo=FALSE,message=FALSE}
+rm(list=ls())
+library(tidyverse)
+```
+
+
 # Problem 5.3.3
 
 ## Part (i)
@@ -76,71 +86,189 @@ Finally, we now have all the components to solve for the general solution to our
 
 Note then that the last line of the above equation matches our solution 
 
-$$e^{-\alpha\left((t+\Delta)-t\right)}r(t) + b\left[1-e^{-\alpha\Delta}\right]+\frac{\sigma}{\sqrt{2\alpha}}\sqrt{(1-e^{-2\alpha(\Delta)})}Z$$
+$$e^{-\alpha\Delta}r(t) + b\left[1-e^{-\alpha\Delta}\right]+\frac{\sigma}{\sqrt{2\alpha}}\sqrt{(1-e^{-2\alpha(\Delta)})}Z$$
 
 ## Part (ii)
 
+### Implementation
 ```{r,path_sim}
 ## define model parameters
-r0 <- 1
-t <- 500
-delta <- 500
-alpha <- c(0.1,1,5)
-sigma <- c(0.1,0.2,0.5)
-b <- c(-5,5)
 
 path_sim <- function(num_sims,r0,t,delta,alpha,sigma,b){
   
   dt <- t/delta
+  
   r <- r0
   
   for(i in 2:(delta+1)){
-    dr <- alpha*(b - r[i-1])*dt + b*sqrt(dt)*rnorm(1,0,1)
-    r[i] <- r[i-1] + dr
+  
+      dr <- alpha*(b - r[i-1])*dt + sigma*sqrt(dt)*rnorm(1,0,1)
+    
+      r[i] <- r[i-1] + dr
   }
   
   return(r)
   
 } 
+```
 
+```{r,simulation,echo=FALSE}
 alpha_paths <- list()
+sigma_paths <- list()
 
-for(i in 1:length(alpha)){
+r0 <- 5
+t <- 500
+delta <- 500
+alpha_set <- c(0.1,1,5)
+sigma_set <- c(0.1,0.2,0.5)
+b <- c(-5,5)
+
+for(i in 1:length(alpha_set)){
   
-  alpha_paths[[i]] <- ts(path_sim(r0=r0,t=t,delta=delta,alpha = alpha[i],sigma = sigma[1],b=b[1]))
+  alpha_paths[[i]] <- ts(path_sim(r0=r0,t=t,delta=delta,alpha = alpha_set[i],sigma = sigma_set[1],b=b[2]))
   
+  sigma_paths[[i]] <- ts(path_sim(r0=r0,t=t,delta=delta,alpha = alpha_set[1],sigma = sigma_set[i],b=b[2]))
   
 }
 
-ts.plot(alpha_paths[[1]])
+alpha_sims_df <- cbind.data.frame('alpha1'=alpha_paths[[1]],
+                               'alpha2'=alpha_paths[[2]],
+                               'alpha3'=alpha_paths[[3]],
+                               't'=seq(0,t,t/delta))
+
+sigma_sims_df <- cbind.data.frame('sigma1'=sigma_paths[[1]],
+                               'sigma2'=sigma_paths[[2]],
+                               'sigma3'=sigma_paths[[3]],
+                               't'=seq(0,t,t/delta))
+alpha_sims_df %>% 
+  pivot_longer(names_to = 'Parameter',
+               values_to='Value',cols=c('alpha1','alpha2','alpha3')) -> alpha_sims_df 
+
+sigma_sims_df %>% 
+  pivot_longer(names_to = 'Parameter',
+               values_to='Value',cols=c('sigma1','sigma2','sigma3'))  -> sigma_sims_df
+
+
+alpha_sims_df$Parameter <- factor(alpha_sims_df$Parameter,
+                                  levels = c('alpha1','alpha2','alpha3'),
+                                  labels = c("alpha[1]", "alpha[2]", "alpha[3]"))
+
+sigma_sims_df$Parameter <- factor(sigma_sims_df$Parameter,
+                                  levels = c('sigma1','sigma2','sigma3'),
+                                  labels = c("sigma[1]", "sigma[2]", "sigma[3]"))
+
+```
+
+### Plots for Alpha
+
+In the plots below we show realizations for $\alpha \in \{0.1,1\}$, with fixed $\sigma = 0.1$ and $b = 5$. We not that for $\alpha_1 = 0.1$, the process tends to vary mory around the mean value $b = 5$ as opposed to $\alpha=1$ which tends to have relatively little fluctuation around the long-term value $b$. Note that we have not plotted the solution for $\alpha = 5$ as in this case the process is degenerate and the values of $r(t)$ go to infinity.
+
+```{r,}
+
+alpha_sims_df %>%
+  filter(Parameter != 'alpha[3]') %>% 
+  ggplot(aes(x=t,y=Value,color=Parameter)) +
+  geom_line() + theme_minimal() + theme(legend.position = 'none') + 
+  labs(title= expression(paste('Plots for varying ',alpha)),x='Time',y=expression(r[t]))+ 
+  facet_wrap(~Parameter,labeller = label_parsed,ncol=1) 
+
+
+```
+
+### Plots for Sigma
+
+Shown below are three realization of the process with $\sigma \in \{0.1,0.2,0.5\}$ and fixed $\alpha=0.1$ and fixed $b=5$. Here we note that as we increase $\sigma$ we note that the process variance increases, however, they still vary around the long-run mean $b=5$.
+
+
+```{r,sigma_plots}
+
+sigma_sims_df %>% 
+  ggplot(aes(x=t,y=Value,color=Parameter)) +
+  geom_line() + theme_minimal() + theme(legend.position = 'none') + 
+  labs(title= expression(paste('Plots for varying ',sigma)),x='Time',y=expression(r[t]))+ 
+  facet_wrap(~Parameter,labeller = label_parsed,ncol = 1) 
+
 ```
 
 ## Part(iii)
 
+We implement the Euler-Maruyama approximation with $\delta \in \{1,0.5,0.1,0.01\}$ in order generate a sample of size 1000 for $r(1+\delta) = r(1) + \alpha(b-r(1))\delta$. The estimated kernel densitied compared to the true density are shown below. Note that we have fixed parameters
 
-```{r,ornstein_uhlenbeck}
+- $\sigma = 0.1$
+- $b = 5$
+- $\alpha = 0.1$
 
-euler_maruyama <- function(T_0,n,b,alpha,sigma,r0){
+### Implementation
+
+```{r,euler_maruyama}
+
+euler_maruyama <- function(t,n,b,alpha,sigma,r0){
   
-  dw  <- rnorm(n, 0, sqrt(T_0/n))
+  dw  <- rnorm(n, 0, sqrt(t/n))
   
-  dt  <- T_0/n
+  dt  <- t/n
   
   r <- c(r0)
   
   for (i in 2:(n+1)) {
-    
-    r[i]  <-  r[i-1] + alpha*(b-r[i-1])*dt + sigma*dw[i-1]
+   
+     r[i]  <-  r[i-1] + alpha*(b-r[i-1])*dt + sigma*dw[i-1]
   
-    }
+  }
   
-  return(x);
+  
+  
+  r1 <- r[length(r)]
+  
+  r1_plus_delta <- rnorm(1,r1+alpha*(b-r1)*n,sd=sigma*n)
+  
+  results <- list(r1,r1_plus_delta)
+  
+  return(results)
 }
+
 ```
 
+```{r,echo=FALSE}
 
-```{r,ou_simulate}
+set.seed(1031)
+subintervals <- c(1,0.5,0.1,0.001)
+num_sims <- 1000
 
 
+r1_sim <- list()
+r1_plus_delta_sim <- list()
+
+for(i in 1:length(subintervals)){
+  
+    r1_temp <- c()
+    r1_plus_delta_temp <- c()
+    
+  for(j in 1:num_sims){
+    
+    result <- euler_maruyama(t=1,n=(1/subintervals[i]),b=5,alpha=0.1,sigma=0.1,r0=0.1)
+    r1_temp[j] <- result[[1]]  
+    r1_plus_delta_temp[j] <- result[[2]]
+  
+  }
+  
+    r1_sim[[i]] <- r1_temp
+    r1_plus_delta_sim[[i]] <- r1_plus_delta_temp
+}
+true_mean <- 0.1+0.1*(5-0.1)*subintervals
+true_sd <- 0.1*subintervals
+
+```
+
+### Plots 
+
+Below, we plot the estimated kernel densities for $r(t+\delta)$ below for $\delta \in \{1,0.5,0.1,0.01\}$. Note that the first couple of densities are un-normalized, though I was unable to ascertain why. Note that it is readily apparent that our approximation of the distribution of $r(1+\delta)$ is quite good here. 
+
+```{r,echo=FALSE}
+par(mfrow=c(2,2))
+for(i in 1:4){
+  hist(r1_plus_delta_sim[[i]],breaks = 30,probability = T,main ='',xlab = expression(r[t+delta]))
+  lines(x=sort(r1_plus_delta_sim[[i]]),dnorm(sort(r1_plus_delta_sim[[i]]),mean = mean(r1_plus_delta_sim[[i]]),sd=sd(r1_plus_delta_sim[[i]])),col='red')
+}
 
 ```
