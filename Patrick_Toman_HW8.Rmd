@@ -1,0 +1,146 @@
+---
+title: "STAT 5361 -  HW 8"
+author: Patrick Toman^[<patrick.toman@uconn.edu>; Ph.D. student at Department of Statistics,
+  University of Connecticut.]
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output: html_document
+---
+
+# Problem 5.3.3
+
+## Part (i)
+
+Conside the Ornstein-Uhlenbeck Process 
+
+$$\text{d} \left(r(t)\right) = \alpha \left(b - r(t)\right)\text{d}t + \sigma \text{d}\left(W_t\right)$$
+
+where we have the constants
+
+- $\alpha > 0$
+- $\sigma > 0$
+- $b \in \mathcal{R}$
+
+Note that this model is equivalent to the _Vasicek_ model for long-term interest rates where $b(s) \equiv b$. For $t > 0$ and $\Delta > 0$ then we can show that the solution to the SDE above is
+
+$$r(t+\Delta) = e^{-\alpha \Delta}r(t) + b\left(1 - e^{-\alpha\Delta}\right) + \frac{\sigma\sqrt{1-e^{-2\alpha\Delta}}}{\sqrt{2\alpha}}Z$$
+
+where $Z \sim N(0,1)$. 
+
+### Proof
+
+Note that the Ornstein-Uhlenbeck Process corresponds to the set of cases known as _gaussian markov processes_. Such processes take the general form of
+
+$$\text{d}r(t) = \left[g(t) + h(t)r(t)\right]\text{d}t + \sigma(t)\text{d}W(t)$$
+
+where $g(t),h(t)$ and $\sigma(t)$ are deterministic functions and 
+
+$$H(t)=\int_{0}^{t}h(s)\text{d}s$$
+
+Therefore, we can leverage Ito's Lemma to yield the following expression
+
+$$\text{d} \left(e^{-H(t)} r(t)\right) = e^{-H(t)}g(t)\text{d}t + e^{-H(t)}\sigma(t)\text{d}W_t$$
+
+thus, the solution to the general _gaussian markov process_ problem is 
+
+$$r(t) = e^{H(t)}r(0)+\int_{0}^{t}e^{H(t)-H(s)}g(s)\text{d}s + \int_{0}^{t}e^{H(t)-H(s)}\sigma(s)\text{d}W(s)$$
+Note that conditional on $r(\tau), \tau \in [0,u]$ for $t>u$ we have
+
+$$r(t) \sim N\left(e^{H(t)-H(u)r(u)}+\mu(u,t),\sigma^2_r(u,t)\right)$$
+
+Furthermore, we can express $r(t_{i+1})$ as 
+
+$$r(t_{i+1}) = e^{H(t_{i+1})-H(t_{i})}r(t_i) + \mu(t_i,t_{i+1}) + \sigma_r(t_i,t_{i+1})Z_{i+1}$$
+
+where we have 
+
+- $\mu(u,t) = \int_{u}^{t}e^{H(t)-H(s)}g(s)\text{d}s$
+- $\sigma^2_{r}(u,t) = \int_{u}^{t}e^{2[H(t)-H(u)]}\sigma^2(s)\text{d}s$
+
+Finally, we now have all the components to solve for the general solution to our problem. Let us denote the following 
+
+- $t_i = t$
+- $t_{i+1} = t+\Delta$
+- $H(t) = -\alpha t$ 
+- $\mu(u,t) = \alpha \int_{u}^{t}e^{-\alpha(t-s)}b\text{d}s$  - Since our process is _Vasicek_ model with $b(s) \equiv b$
+- $\sigma^2_{r}(u,t) = \frac{\sigma^2}{2\alpha}\left(1-e^{-2\alpha(t-u)}\right)$
+
+
+\begin{align}
+  r(t+\Delta) & = e^{-\alpha\left((t+\Delta)-t\right)}r(t) + \alpha\int_{t}^{t+\Delta}e^{-\alpha(t-s)}b\text{d}s + \frac{\sigma}{\sqrt{2\alpha}}\sqrt{(1-e^{-2\alpha(\Delta)})}Z\\
+  & = e^{-\alpha\Delta}r(t) + \alpha b \int_{t}^{t+\Delta}e^{-\alpha\left(t+\Delta + s\right)}\text{d}s + \frac{\sigma}{\sqrt{2\alpha}}\sqrt{(1-e^{-2\alpha(\Delta)})}Z\\
+  & = e^{-\alpha\Delta}r(t) + b e^{-\alpha(t+\Delta)}\int_{t}^{t+\Delta}\alpha e^{\alpha s}\text{d}s+\frac{\sigma}{\sqrt{2\alpha}}\sqrt{(1-e^{-2\alpha(\Delta)})}Z\\
+  & = e^{-\alpha\Delta}r(t) + b e^{-\alpha(t+\Delta)}\left[e^{\alpha(t+\Delta)} -e^{\alpha t}\right] + \frac{\sigma}{\sqrt{2\alpha}}\sqrt{(1-e^{-2\alpha(\Delta)})}Z\\
+  & = e^{-\alpha\left((t+\Delta)-t\right)}r(t) + b\left[1-e^{-\alpha\Delta}\right]+\frac{\sigma}{\sqrt{2\alpha}}\sqrt{(1-e^{-2\alpha(\Delta)})}Z
+\end{align}
+
+
+Note then that the last line of the above equation matches our solution 
+
+$$e^{-\alpha\left((t+\Delta)-t\right)}r(t) + b\left[1-e^{-\alpha\Delta}\right]+\frac{\sigma}{\sqrt{2\alpha}}\sqrt{(1-e^{-2\alpha(\Delta)})}Z$$
+
+## Part (ii)
+
+```{r,path_sim}
+## define model parameters
+r0 <- 1
+t <- 500
+delta <- 500
+alpha <- c(0.1,1,5)
+sigma <- c(0.1,0.2,0.5)
+b <- c(-5,5)
+
+path_sim <- function(num_sims,r0,t,delta,alpha,sigma,b){
+  
+  dt <- t/delta
+  r <- r0
+  
+  for(i in 2:(delta+1)){
+    dr <- alpha*(b - r[i-1])*dt + b*sqrt(dt)*rnorm(1,0,1)
+    r[i] <- r[i-1] + dr
+  }
+  
+  return(r)
+  
+} 
+
+alpha_paths <- list()
+
+for(i in 1:length(alpha)){
+  
+  alpha_paths[[i]] <- ts(path_sim(r0=r0,t=t,delta=delta,alpha = alpha[i],sigma = sigma[1],b=b[1]))
+  
+  
+}
+
+ts.plot(alpha_paths[[1]])
+```
+
+## Part(iii)
+
+
+```{r,ornstein_uhlenbeck}
+
+euler_maruyama <- function(T_0,n,b,alpha,sigma,r0){
+  
+  dw  <- rnorm(n, 0, sqrt(T_0/n))
+  
+  dt  <- T_0/n
+  
+  r <- c(r0)
+  
+  for (i in 2:(n+1)) {
+    
+    r[i]  <-  r[i-1] + alpha*(b-r[i-1])*dt + sigma*dw[i-1]
+  
+    }
+  
+  return(x);
+}
+```
+
+
+```{r,ou_simulate}
+
+
+
+```
