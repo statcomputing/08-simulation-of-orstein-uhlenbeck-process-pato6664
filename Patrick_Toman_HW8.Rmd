@@ -255,20 +255,166 @@ for(i in 1:length(subintervals)){
     r1_sim[[i]] <- r1_temp
     r1_plus_delta_sim[[i]] <- r1_plus_delta_temp
 }
-true_mean <- 0.1+0.1*(5-0.1)*subintervals
-true_sd <- 0.1*subintervals
+
 
 ```
 
 ### Plots 
 
-Below, we plot the estimated kernel densities for $r(t+\delta)$ below for $\delta \in \{1,0.5,0.1,0.01\}$. Note that the first couple of densities are un-normalized, though I was unable to ascertain why. Note that it is readily apparent that our approximation of the distribution of $r(1+\delta)$ is quite good here. 
+Below, we plot the estimated kernel densities for $r(t+\delta)$ below for $\delta \in \{1,0.5,0.1,0.01\}$.  Note that it is readily apparent that our approximation of the distribution of $r(1+\delta)$ is quite good here. 
 
 ```{r,echo=FALSE}
 par(mfrow=c(2,2))
 for(i in 1:4){
-  hist(r1_plus_delta_sim[[i]],breaks = 30,probability = T,main ='',xlab = expression(r[t+delta]))
-  lines(x=sort(r1_plus_delta_sim[[i]]),dnorm(sort(r1_plus_delta_sim[[i]]),mean = mean(r1_plus_delta_sim[[i]]),sd=sd(r1_plus_delta_sim[[i]])),col='red')
+  hist(r1_plus_delta_sim[[i]],breaks = 30,
+       probability = T,main ='',xlab = expression(r[t+delta]))
+  lines(x=sort(r1_plus_delta_sim[[i]]),dnorm(sort(r1_plus_delta_sim[[i]]),
+                                             mean=mean(r1_plus_delta_sim[[i]]),
+                                             sd=sd(r1_plus_delta_sim[[i]])),col='red')
 }
 
+```
+
+
+# Problem 5.3.4 
+
+## Part (i)
+
+Suppose that $N(t)$ is an inhomogenous poisson process defined for $t \in [0,5]$ with the following attributes
+  
+- $\lambda(t) = \sqrt{t} + e^{-t}sin(2 \pi t)$ is the intensity function for rate parameter
+- $Z = \int_{0}^{5} \left(\sqrt{t} + e^{-t}sin(2 \pi t)\right)dt$
+- $f(t) = \frac{\lambda(t)}{Z}$ where $f(t)$ is defined on the inerval $[0,5]$.
+
+To find the distribution and parameters of  $N(5)$ we must first solve for $Z$ as such
+
+\begin{align*}
+  Z & = \int_{0}^{5} \left(\sqrt{t} + e^{-t}sin(2 \pi t)\right)dt \\
+    & = \int_{0}^{5} \sqrt{t}dt + \int_{0}^{5}e^{-t}sin(2 \pi t)dt \\
+    & = \frac{10\sqrt{5}}{3} + \frac{2(e^5-1)}{e^5(1+4\pi^2)}
+\end{align*}
+
+therfore we have
+
+$$N(5) \sim Poisson\left(\frac{10\sqrt{5}}{3} + \frac{2(e^5-1)}{e^5(1+4\pi^2)}\right)$$
+where the parameter values are 
+
+- $t=5$
+- $E[N(5)] = Var[N(5)] = \frac{10\sqrt{5}}{3} + \frac{2(e^5-1)}{e^5(1+4\pi^2)}$
+
+## Part(ii)
+
+To implement the inhomogenous poisson process above we can use the following algorithm 
+
+1. Sample $N \sim Poisson(Z)$ where $Z = \int_{0}^{5} \left(\sqrt{t} + e^{-t}sin(2 \pi t)\right)dt$
+2. Sample $X_1,\ldots,X_N \overset{iid}{\sim} f(t)$ and sort to attain order statistics $X_{(1)} \le X_{(2)} \ldots \le X_{(N)}$
+3. Return $X_{(1)},\ldots,X_{(N)}$
+
+### Implementation
+
+
+```{r,nhpp_sim}
+
+# Intensity function
+
+lambda <- function(t){ sqrt(t) + exp(-t)*sin(2*pi*t) }
+
+Lambda <- function(t){integrate(f = lambda,lower = 0, upper = t)$value}
+
+nhpp_sim <- function(maxTime,lambda){
+  
+  t <- 0
+  
+  maxT <- maxTime
+  
+  # Simulate number of events
+  
+  N <- rpois(1,lambda = Lambda(maxTime))
+  
+  # cdf of intensity at time t
+  
+  Ft <- function(x){ Lambda(x)/Lambda(maxTime) }
+  
+  # Inverts the intensity CDF
+  
+  invFt <- function(uni_sim){
+    
+    a <- 0 
+    
+    b <- maxTime 
+    
+    tol <- 1e-6
+    
+    while(abs(a - b)>tol){
+      
+      if(Ft(0.5*(a+b)) <= uni_sim){
+        
+        a <- (a+b)/2
+        
+      }
+      
+      if(Ft(0.5*(a+b)) >= uni_sim){
+        
+        b <- (a+b)/2
+        
+      }
+      
+      
+    }
+    
+    return(0.5*(a+b))
+  
+  }
+  
+  sims <- sapply(1:N,function(z) invFt(runif(1)))
+  
+  return(sort(sims))
+}
+
+```
+
+
+```{r,echo=FALSE}
+set.seed(1106)
+
+nsamples <- 1000
+
+maxTime_set <- 5
+
+par_seq <- rep(maxTime_set,nsamples)
+
+samples <- unlist(lapply(par_seq,nhpp_sim,lambda=lambda))
+
+```
+
+
+```{r,echo=FALSE}
+
+Z <- integrate(lambda,0,5)$value
+t_seq <- seq(from=0,to = 5,length.out = length(samples))
+ft <- lambda(t_seq)
+ft_normalized <- ft/Z
+
+plot_df <- cbind.data.frame('Samples'=samples,'Actual'=ft_normalized,'t'=t_seq)
+
+
+plot_df %>% 
+  ggplot()+
+  geom_histogram(aes(x=Samples,y=..density..),fill='red',color='red',alpha=0.25)+
+  geom_line(aes(x=t,y=Actual),color='blue')+theme_minimal() + theme(legend.position = 'right') + 
+  ggtitle('Estimated Kernel Density vs Actual Density') +
+  scale_color_manual(name = 'data source', values =c('b'='blue','a'='orange'), labels = c('df','empirical_data'))  -> plot
+
+
+```
+
+
+## Part (iii)
+
+Shown below is a plot the estimated density in the form of a histogram (red) overlaid with actual density $f(t) = \frac{\lambda(t)}{\int_{0}^{5}\lambda(s)ds}$ (blue curve). As one can readily see, the simulation offers a quite accurate approximation of our target density.
+
+
+
+```{r,echo=FALSE}
+plot
 ```
